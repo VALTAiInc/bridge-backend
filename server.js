@@ -118,14 +118,14 @@ async function synthesizeSpeech(text, language) {
 app.post("/api/translate", upload.single("audio"), async (req, res) => {
   const filePath = req.file?.path;
   try {
-    if (!req.file) return res.status(400).json({ error: "No audio file provided." });
-    const { sourceLanguage, targetLanguage, callerApp = "Bridge" } = req.body;
+    const { sourceLanguage, targetLanguage, callerApp = "Bridge", text: textInput } = req.body;
+    if (!req.file && !textInput) return res.status(400).json({ error: "No audio file or text provided." });
     if (!sourceLanguage || !targetLanguage) return res.status(400).json({ error: "sourceLanguage and targetLanguage required." });
     if (sourceLanguage === targetLanguage) return res.status(400).json({ error: "Languages must be different." });
 
     console.log(`[${callerApp}] ${sourceLanguage}→${targetLanguage}`);
 
-    const transcript = await transcribeAudio(filePath, sourceLanguage);
+    const transcript = textInput ? textInput.trim() : await transcribeAudio(filePath, sourceLanguage);
     if (!transcript) return res.status(422).json({ error: "No speech detected." });
     console.log(`  STT: "${transcript}"`);
 
