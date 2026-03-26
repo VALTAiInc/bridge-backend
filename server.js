@@ -151,6 +151,28 @@ app.post("/api/translate", upload.single("audio"), async (req, res) => {
   }
 });
 
+app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
+  const filePath = req.file?.path;
+  try {
+    if (!req.file) return res.status(400).json({ error: "No audio file provided." });
+    const { language } = req.body;
+
+    const start = Date.now();
+    const transcript = await transcribeAudio(filePath, language);
+    const durationMs = Date.now() - start;
+
+    if (!transcript) return res.status(422).json({ error: "No speech detected." });
+    console.log(`[Transcribe] "${transcript}" (${durationMs}ms)`);
+
+    return res.json({ transcript, language: language || null, durationMs });
+  } catch (err) {
+    console.error("[Transcribe] Error:", err.message);
+    return res.status(500).json({ error: "Transcription failed.", detail: err.message });
+  } finally {
+    if (filePath) fs.unlink(filePath, () => {});
+  }
+});
+
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", service: "Bridge by VALT", version: "2.0.0", timestamp: new Date().toISOString() });
 });
