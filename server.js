@@ -33,7 +33,7 @@ const ELEVENLABS_VOICES = {
   de: process.env.VOICE_DE || "ErXwobaYiN019PkySvjV",
   pt: process.env.VOICE_PT || "VR6AewLTigWG4xSOukaG",
   zh: process.env.VOICE_ZH || "pNInz6obpgDQGcFmaJgB",
-  ja: process.env.VOICE_JA || "yoZ06aMxZJJ28mfd3POQ",
+  ja: process.env.VOICE_JA || "WQz3clzUdMqvBf0jswZQ",
   ko: process.env.VOICE_KO || "pMsXgVXv3BLzUgSXRplE",
   ar: process.env.VOICE_AR || "jsCqWAovK2LkecY7zXl4",
   hi: process.env.VOICE_HI || "ThT5KcBeYPX3keUQqHPh",
@@ -83,12 +83,23 @@ async function translateText(text, sourceLanguage, targetLanguage) {
   const sourceName = LANGUAGE_NAMES[sourceLanguage] || sourceLanguage;
   const targetName = LANGUAGE_NAMES[targetLanguage] || targetLanguage;
 
+  let systemPrompt = `You are a professional translator for workplace communication in trades, hospitality, and industrial settings.
+Translate naturally and accurately. Preserve the speaker's tone and intent.
+Output ONLY the translated text — no explanations, no quotes, no preamble.`;
+
+  if (targetLanguage === "ja") {
+    systemPrompt += `\n\nJapanese punctuation rules — you MUST follow these:
+- Use 。for sentence endings (never a period).
+- Use ？for questions (never ?).
+- Use ！for exclamations (never !).
+- Use 、for natural breath pauses mid-sentence.
+- Questions must end with ですか？ or か？ patterns where grammatically natural.`;
+  }
+
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 1024,
-    system: `You are a professional translator for workplace communication in trades, hospitality, and industrial settings.
-Translate naturally and accurately. Preserve the speaker's tone and intent.
-Output ONLY the translated text — no explanations, no quotes, no preamble.`,
+    system: systemPrompt,
     messages: [{ role: "user", content: `Translate from ${sourceName} to ${targetName}:\n\n${text}` }],
   });
 
@@ -97,6 +108,12 @@ Output ONLY the translated text — no explanations, no quotes, no preamble.`,
 
 async function synthesizeSpeech(text, language) {
   const voiceId = ELEVENLABS_VOICES[language] || ELEVENLABS_VOICES["en"];
+  const useMultilingual = ["ja", "ko", "zh"].includes(language);
+  const modelId = useMultilingual ? "eleven_multilingual_v2" : "eleven_turbo_v2";
+  const voiceSettings = language === "ja"
+    ? { stability: 0.35, similarity_boost: 0.80, style: 0.50, use_speaker_boost: true }
+    : { stability: 0.5, similarity_boost: 0.8, style: 0.2, use_speaker_boost: true };
+
   const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: "POST",
     headers: {
@@ -106,8 +123,8 @@ async function synthesizeSpeech(text, language) {
     },
     body: JSON.stringify({
       text,
-      model_id: "eleven_turbo_v2",
-      voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.2, use_speaker_boost: true },
+      model_id: modelId,
+      voice_settings: voiceSettings,
     }),
   });
 
