@@ -9,6 +9,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { YoutubeTranscript } from "youtube-transcript";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -53,17 +54,29 @@ app.use("/api/", limiter);
 const upload = multer({
   dest: "/tmp/bridge-uploads/",
   limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      "audio/", "video/mp4", "video/quicktime", "video/mov",
+      "application/octet-stream",
+    ];
+    if (allowed.some((t) => file.mimetype.startsWith(t))) cb(null, true);
+    else cb(new Error(`Unsupported file type: ${file.mimetype}`));
+  },
 });
 
-async function transcribeAudio(filePath, language) {
+async function transcribeAudio(filePath, language, originalMime) {
   const whisperLang = language === "ar-LB" ? "ar"
     : language === "fil" ? "tl"
     : language;
 
+  const isVideo = originalMime && (originalMime.startsWith("video/") || originalMime === "video/quicktime");
+  const filename = isVideo ? "recording.mp4" : "recording.m4a";
+  const contentType = isVideo ? "video/mp4" : "audio/m4a";
+
   const form = new FormData();
   form.append("file", fs.createReadStream(filePath), {
-    filename: "recording.m4a",
-    contentType: "audio/m4a",
+    filename,
+    contentType,
   });
   form.append("model", "whisper-1");
   form.append("response_format", "text");
@@ -171,11 +184,11 @@ app.post("/api/translate", upload.single("audio"), async (req, res) => {
 app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
   const filePath = req.file?.path;
   try {
-    if (!req.file) return res.status(400).json({ error: "No audio file provided." });
+    if (!req.file) return res.status(400).json({ error: "No audio or video file provided." });
     const { language } = req.body;
 
     const start = Date.now();
-    const transcript = await transcribeAudio(filePath, language);
+    const transcript = await transcribeAudio(filePath, language, req.file.mimetype);
     const durationMs = Date.now() - start;
 
     if (!transcript) return res.status(422).json({ error: "No speech detected." });
@@ -187,6 +200,31 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
     return res.status(500).json({ error: "Transcription failed.", detail: err.message });
   } finally {
     if (filePath) fs.unlink(filePath, () => {});
+  }
+});
+
+app.post("/api/transcribe-youtube", async (req, res) => {
+  try {
+    const { youtubeUrl } = req.body;
+    if (!youtubeUrl) return res.status(400).json({ error: "youtubeUrl is required." });
+
+    console.log(`[YouTube] Fetching captions: ${youtubeUrl}`);
+    const items = await YoutubeTranscript.fetchTranscript(youtubeUrl);
+
+    if (!items || items.length === 0) {
+      return res.status(422).json({ error: "This video has no closed captions available." });
+    }
+
+    const transcript = items.map((i) => i.text).join(" ");
+    console.log(`[YouTube] Got ${items.length} segments, ${transcript.length} chars`);
+
+    return res.json({ transcript });
+  } catch (err) {
+    console.error("[YouTube] Error:", err.message);
+    if (err.message?.includes("disabled") || err.message?.includes("not available")) {
+      return res.status(422).json({ error: "This video has no closed captions available." });
+    }
+    return res.status(500).json({ error: "YouTube transcription failed.", detail: err.message });
   }
 });
 
