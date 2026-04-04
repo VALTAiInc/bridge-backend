@@ -9,7 +9,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { YoutubeTranscript } from "youtube-transcript";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const { YoutubeTranscript } = require("youtube-transcript");
 import dotenv from "dotenv";
 
 dotenv.config();
