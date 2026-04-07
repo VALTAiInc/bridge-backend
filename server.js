@@ -181,6 +181,45 @@ app.post("/api/translate", upload.single("audio"), async (req, res) => {
   }
 });
 
+app.post("/api/translate-text", async (req, res) => {
+  try {
+    const { text, sourceLanguage, targetLanguage, callerApp = "Bridge" } = req.body || {};
+    if (!text || !sourceLanguage || !targetLanguage) {
+      return res.status(400).json({ error: "text, sourceLanguage, and targetLanguage required." });
+    }
+    if (sourceLanguage === targetLanguage) {
+      return res.status(400).json({ error: "Languages must be different." });
+    }
+
+    console.log(`[${callerApp}] (text) ${sourceLanguage}→${targetLanguage}`);
+
+    const start = Date.now();
+    const transcript = text.trim();
+    console.log(`  Input: "${transcript}"`);
+
+    const translation = await translateText(transcript, sourceLanguage, targetLanguage);
+    console.log(`  Translation: "${translation}"`);
+
+    const audioBuffer = await synthesizeSpeech(translation, targetLanguage);
+    console.log(`  TTS: ${audioBuffer.length} bytes`);
+
+    const durationMs = Date.now() - start;
+
+    return res.json({
+      transcript,
+      translation,
+      audioBase64: audioBuffer.toString("base64"),
+      audioMimeType: "audio/mpeg",
+      sourceLanguage,
+      targetLanguage,
+      durationMs,
+    });
+  } catch (err) {
+    console.error("[Bridge] translate-text error:", err.message);
+    return res.status(500).json({ error: "Translation pipeline failed.", detail: err.message });
+  }
+});
+
 app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
   const filePath = req.file?.path;
   try {
