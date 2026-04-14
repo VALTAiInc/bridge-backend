@@ -220,6 +220,83 @@ app.post("/api/translate-text", async (req, res) => {
   }
 });
 
+app.post("/api/clean-japanese", async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    if (!text) {
+      return res.status(400).json({ error: "text is required." });
+    }
+
+    console.log(`[CleanJP] Input: "${text.slice(0, 80)}..."`);
+
+    const message = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1024,
+      system: `You are a text prep assistant for Japanese text-to-speech. The input is English text that will be read aloud by a Japanese voice. Add natural punctuation to improve TTS delivery — use ? for questions and ... for natural pauses. Do not add exclamation marks. Never duplicate punctuation that already exists in the text. Do not translate. Do not change any words. Return ONLY the corrected text.`,
+      messages: [{ role: "user", content: text }],
+    });
+
+    const cleaned = message.content[0].text.trim();
+    console.log(`[CleanJP] Output: "${cleaned.slice(0, 80)}..."`);
+
+    return res.json({ text: cleaned });
+  } catch (err) {
+    console.error("[CleanJP] Error:", err.message);
+    return res.status(500).json({ error: "Japanese punctuation cleanup failed.", detail: err.message });
+  }
+});
+
+app.post("/api/speak", async (req, res) => {
+  try {
+    const { text, language, voiceSettings } = req.body || {};
+    if (!text || !language) {
+      return res.status(400).json({ error: "text and language are required." });
+    }
+
+    const voiceId = ELEVENLABS_VOICES[language] || ELEVENLABS_VOICES["en"];
+    const useMultilingual = ["ja", "ko", "zh"].includes(language);
+    const modelId = useMultilingual ? "eleven_multilingual_v2" : "eleven_multilingual_v2";
+    const defaults = language === "ja"
+      ? { stability: 0.35, similarity_boost: 0.80, style: 0.25, use_speaker_boost: true }
+      : { stability: 0.5, similarity_boost: 1.0, style: 0.2, use_speaker_boost: true, speed: 1.0 };
+    const mergedSettings = voiceSettings
+      ? { ...defaults, ...voiceSettings, use_speaker_boost: true }
+      : defaults;
+
+    console.log(`[Speak] lang=${language}, text="${text.slice(0, 80)}..."`);
+
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_192`, {
+      method: "POST",
+      headers: {
+        "xi-api-key": ELEVENLABS_API_KEY,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text,
+        model_id: modelId,
+        voice_settings: mergedSettings,
+      }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`ElevenLabs error ${response.status}: ${errBody}`);
+    }
+
+    const audioBuffer = Buffer.from(await response.arrayBuffer());
+    console.log(`[Speak] TTS: ${audioBuffer.length} bytes`);
+
+    return res.json({
+      audioBase64: audioBuffer.toString("base64"),
+      audioMimeType: "audio/mpeg",
+    });
+  } catch (err) {
+    console.error("[Speak] Error:", err.message);
+    return res.status(500).json({ error: "Speech synthesis failed.", detail: err.message });
+  }
+});
+
 app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
   const filePath = req.file?.path;
   try {
