@@ -43,6 +43,7 @@ const ELEVENLABS_VOICES = {
 
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 const app = express();
+app.set("trust proxy", 1);
 
 app.use(helmet());
 app.use(cors({ origin: "*" }));
@@ -53,7 +54,7 @@ app.use("/api/", limiter);
 
 const upload = multer({
   dest: "/tmp/bridge-uploads/",
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: 500 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = [
       "audio/", "video/mp4", "video/quicktime", "video/mov",
@@ -395,6 +396,9 @@ app.get("/api/health", (req, res) => {
 });
 
 app.use((err, req, res, _next) => {
+  if (err.code === "LIMIT_FILE_SIZE") {
+    return res.status(413).json({ error: "File too large. Maximum size is 500MB." });
+  }
   console.error("[Bridge] Unhandled:", err);
   res.status(500).json({ error: err.message || "Internal server error" });
 });
