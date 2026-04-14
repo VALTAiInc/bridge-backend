@@ -297,6 +297,45 @@ app.post("/api/speak", async (req, res) => {
   }
 });
 
+app.post("/api/clone-voice", upload.single("audio"), async (req, res) => {
+  const filePath = req.file?.path;
+  try {
+    if (!req.file) return res.status(400).json({ error: "No audio file provided." });
+    const { voiceName } = req.body || {};
+    if (!voiceName) return res.status(400).json({ error: "voiceName is required." });
+
+    console.log(`[CloneVoice] name="${voiceName}", file=${req.file.originalname}`);
+
+    const form = new FormData();
+    form.append("name", voiceName);
+    form.append("files", fs.createReadStream(filePath), {
+      filename: req.file.originalname || "voice.m4a",
+      contentType: req.file.mimetype || "audio/mp4",
+    });
+
+    const response = await fetch("https://api.elevenlabs.io/v1/voices/add", {
+      method: "POST",
+      headers: { "xi-api-key": ELEVENLABS_API_KEY, ...form.getHeaders() },
+      body: form,
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`ElevenLabs clone error ${response.status}: ${errBody}`);
+    }
+
+    const data = await response.json();
+    console.log(`[CloneVoice] Created voice: ${data.voice_id}`);
+
+    return res.json({ voiceId: data.voice_id });
+  } catch (err) {
+    console.error("[CloneVoice] Error:", err.message);
+    return res.status(500).json({ error: "Voice cloning failed.", detail: err.message });
+  } finally {
+    if (filePath) fs.unlink(filePath, () => {});
+  }
+});
+
 app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
   const filePath = req.file?.path;
   try {
