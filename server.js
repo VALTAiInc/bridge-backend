@@ -248,12 +248,12 @@ app.post("/api/clean-japanese", async (req, res) => {
 
 app.post("/api/speak", async (req, res) => {
   try {
-    const { text, language, voiceSettings } = req.body || {};
+    const { text, language, voiceSettings, customVoiceId } = req.body || {};
     if (!text || !language) {
       return res.status(400).json({ error: "text and language are required." });
     }
 
-    const voiceId = ELEVENLABS_VOICES[language] || ELEVENLABS_VOICES["en"];
+    const voiceId = customVoiceId || ELEVENLABS_VOICES[language] || ELEVENLABS_VOICES["en"];
     const useMultilingual = ["ja", "ko", "zh"].includes(language);
     const modelId = useMultilingual ? "eleven_multilingual_v2" : "eleven_multilingual_v2";
     const defaults = language === "ja"
