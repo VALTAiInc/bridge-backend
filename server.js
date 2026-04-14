@@ -304,13 +304,19 @@ app.post("/api/clone-voice", upload.single("audio"), async (req, res) => {
     const { voiceName } = req.body || {};
     if (!voiceName) return res.status(400).json({ error: "voiceName is required." });
 
-    console.log(`[CloneVoice] name="${voiceName}", file=${req.file.originalname}`);
+    const fileSize = fs.statSync(filePath).size;
+    const ext = (req.file.originalname || "voice.m4a").split(".").pop()?.toLowerCase() ?? "m4a";
+    const mimeMap = { m4a: "audio/mp4", mp3: "audio/mpeg", wav: "audio/wav", mp4: "audio/mp4" };
+    const contentType = mimeMap[ext] || "audio/mp4";
+    const filename = ext === "m4a" ? req.file.originalname || "voice.m4a" : `voice.${ext}`;
+
+    console.log(`[CloneVoice] name="${voiceName}", file=${req.file.originalname}, uploadedMime=${req.file.mimetype}, resolvedMime=${contentType}, size=${fileSize} bytes`);
 
     const form = new FormData();
     form.append("name", voiceName);
     form.append("files", fs.createReadStream(filePath), {
-      filename: req.file.originalname || "voice.m4a",
-      contentType: req.file.mimetype || "audio/mp4",
+      filename,
+      contentType,
     });
 
     const response = await fetch("https://api.elevenlabs.io/v1/voices/add", {
@@ -321,6 +327,7 @@ app.post("/api/clone-voice", upload.single("audio"), async (req, res) => {
 
     if (!response.ok) {
       const errBody = await response.text();
+      console.error(`[CloneVoice] ElevenLabs responded ${response.status}: ${errBody}`);
       throw new Error(`ElevenLabs clone error ${response.status}: ${errBody}`);
     }
 
