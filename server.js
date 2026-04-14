@@ -10,6 +10,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { YoutubeTranscript } from "youtube-transcript/dist/youtube-transcript.esm.js";
+import ffmpeg from "fluent-ffmpeg";
+import { execSync } from "child_process";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -64,6 +66,33 @@ const upload = multer({
     else cb(new Error(`Unsupported file type: ${file.mimetype}`));
   },
 });
+
+const WHISPER_MAX_SIZE = 24 * 1024 * 1024;
+
+let ffmpegAvailable = false;
+try {
+  execSync("ffmpeg -version", { stdio: "ignore" });
+  ffmpegAvailable = true;
+  console.log("[Init] ffmpeg is available");
+} catch {
+  console.warn("[Init] ffmpeg not found — large file compression disabled");
+}
+
+function compressAudio(inputPath) {
+  const outputPath = inputPath + ".compressed.mp3";
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .noVideo()
+      .audioCodec("libmp3lame")
+      .audioBitrate("64k")
+      .audioChannels(1)
+      .audioFrequency(16000)
+      .output(outputPath)
+      .on("end", () => resolve(outputPath))
+      .on("error", (err) => reject(err))
+      .run();
+  });
+}
 
 async function transcribeAudio(filePath, language, originalMime) {
   const whisperLang = language === "ar-LB" ? "ar"
@@ -352,8 +381,24 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
     const fileSize = fs.statSync(filePath).size;
     console.log(`[Transcribe] Incoming: file=${req.file.originalname}, mime=${req.file.mimetype}, size=${fileSize} bytes, lang=${language}`);
 
+    let transcribePath = filePath;
+    let compressedPath = null;
+
+    if (fileSize > WHISPER_MAX_SIZE) {
+      if (!ffmpegAvailable) {
+        return res.status(413).json({
+          error: "File too large for transcription (over 24MB). Please trim the video or upload a shorter recording.",
+        });
+      }
+      console.log(`[Transcribe] File exceeds 24MB (${(fileSize / 1024 / 1024).toFixed(1)}MB), compressing audio...`);
+      compressedPath = await compressAudio(filePath);
+      const compressedSize = fs.statSync(compressedPath).size;
+      console.log(`[Transcribe] Compressed: ${(compressedSize / 1024 / 1024).toFixed(1)}MB (was ${(fileSize / 1024 / 1024).toFixed(1)}MB)`);
+      transcribePath = compressedPath;
+    }
+
     const start = Date.now();
-    const transcript = await transcribeAudio(filePath, language, req.file.mimetype);
+    const transcript = await transcribeAudio(transcribePath, language, fileSize > WHISPER_MAX_SIZE ? "audio/mpeg" : req.file.mimetype);
     const durationMs = Date.now() - start;
 
     if (!transcript) return res.status(422).json({ error: "No speech detected." });
@@ -365,6 +410,8 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
     return res.status(500).json({ error: "Transcription failed.", detail: err.message });
   } finally {
     if (filePath) fs.unlink(filePath, () => {});
+    const compressedPath = filePath + ".compressed.mp3";
+    fs.unlink(compressedPath, () => {});
   }
 });
 
