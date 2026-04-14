@@ -57,7 +57,7 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = [
-      "audio/", "video/mp4", "video/quicktime", "video/mov",
+      "audio/", "video/mp4", "video/quicktime", "video/mov", "video/x-m4v",
       "application/octet-stream",
     ];
     if (allowed.some((t) => file.mimetype.startsWith(t))) cb(null, true);
@@ -349,6 +349,8 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No audio or video file provided." });
     const { language } = req.body;
+    const fileSize = fs.statSync(filePath).size;
+    console.log(`[Transcribe] Incoming: file=${req.file.originalname}, mime=${req.file.mimetype}, size=${fileSize} bytes, lang=${language}`);
 
     const start = Date.now();
     const transcript = await transcribeAudio(filePath, language, req.file.mimetype);
