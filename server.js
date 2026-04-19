@@ -125,7 +125,7 @@ Output ONLY the translated text — no explanations, no quotes, no preamble.`;
 async function synthesizeSpeech(text, language) {
   const voiceId = ELEVENLABS_VOICES[language] || ELEVENLABS_VOICES["en"];
   const useMultilingual = ["ja", "ko", "zh"].includes(language);
-  const modelId = useMultilingual ? "eleven_multilingual_v2" : "eleven_turbo_v2";
+  const modelId = "eleven_flash_v2_5";
   const voiceSettings = language === "ja"
     ? { stability: 0.35, similarity_boost: 0.80, style: 0.50, use_speaker_boost: true }
     : { stability: 0.5, similarity_boost: 0.8, style: 0.2, use_speaker_boost: true };
